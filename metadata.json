@@ -1,0 +1,5 @@
+{
+  "name": "Potty Tracker",
+  "description": "A smart child potty tracking application that visualizes toilet habits, analyzes patterns using statistical modeling, and provides AI-driven advice on the best times to prompt your child.",
+  "requestFramePermissions": []
+}
