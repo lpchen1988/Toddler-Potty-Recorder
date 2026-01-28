@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { PottyEvent } from '../types';
+import { PottyEvent, EventType } from '../types';
 import { formatTime } from '../utils/stats';
 
 interface TodayLogsProps {
@@ -8,6 +8,48 @@ interface TodayLogsProps {
   onDelete: (id: string) => void;
   onEdit: (id: string, newTimestamp: number) => void;
 }
+
+const getEventIcon = (type: EventType | undefined) => {
+  switch (type) {
+    case 'wakeup': return '☀️';
+    case 'meal': return '🍎';
+    case 'breakfast': return '🍳';
+    case 'lunch': return '🥪';
+    case 'dinner': return '🍝';
+    case 'snack': return '🍌';
+    case 'nap': return '😴';
+    case 'potty':
+    default: return '💩';
+  }
+};
+
+const getEventLabel = (type: EventType | undefined) => {
+  switch (type) {
+    case 'wakeup': return 'Wake up';
+    case 'meal': return 'Meal';
+    case 'breakfast': return 'Breakfast';
+    case 'lunch': return 'Lunch';
+    case 'dinner': return 'Dinner';
+    case 'snack': return 'Snack';
+    case 'nap': return 'Nap';
+    case 'potty':
+    default: return 'Potty Event';
+  }
+};
+
+const getEventColorClass = (type: EventType | undefined) => {
+  switch (type) {
+    case 'wakeup': return 'text-amber-500';
+    case 'breakfast':
+    case 'lunch':
+    case 'dinner':
+    case 'snack':
+    case 'meal': return 'text-emerald-500';
+    case 'nap': return 'text-indigo-500';
+    case 'potty':
+    default: return 'text-slate-400';
+  }
+};
 
 const TodayLogs: React.FC<TodayLogsProps> = ({ events, onDelete, onEdit }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -42,15 +84,15 @@ const TodayLogs: React.FC<TodayLogsProps> = ({ events, onDelete, onEdit }) => {
     <div className="space-y-4 mb-8">
       <div className="flex items-center justify-between px-2">
         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Today's Activity</h3>
-        <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold">
-          {todaysEvents.length} {todaysEvents.length === 1 ? 'EVENT' : 'EVENTS'}
+        <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
+          {todaysEvents.length} {todaysEvents.length === 1 ? 'ENTRY' : 'ENTRIES'}
         </span>
       </div>
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 divide-y divide-slate-50 overflow-hidden">
         {todaysEvents.map(event => (
           <div key={event.id} className="flex items-center justify-between px-6 py-5 group">
             <div className="flex items-center gap-4">
-              <span className="text-2xl">💩</span>
+              <span className="text-2xl">{getEventIcon(event.type)}</span>
               <div>
                 {editingId === event.id ? (
                   <div className="flex items-center gap-2">
@@ -78,9 +120,14 @@ const TodayLogs: React.FC<TodayLogsProps> = ({ events, onDelete, onEdit }) => {
                     </button>
                   </div>
                 ) : (
-                  <p className="text-slate-800 font-bold text-lg leading-none">
-                    {formatTime(new Date(event.timestamp).getHours() * 60 + new Date(event.timestamp).getMinutes())}
-                  </p>
+                  <div className="flex flex-col">
+                    <p className="text-slate-800 font-bold text-lg leading-none mb-1">
+                      {formatTime(new Date(event.timestamp).getHours() * 60 + new Date(event.timestamp).getMinutes())}
+                    </p>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${getEventColorClass(event.type)}`}>
+                      {getEventLabel(event.type)}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

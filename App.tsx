@@ -8,17 +8,20 @@ import HistoryList from './components/HistoryList';
 import BottomNav from './components/BottomNav';
 import TodayLogs from './components/TodayLogs';
 import Toast from './components/Toast';
-import Auth from './components/Auth';
 import ChildSwiper from './components/ChildSwiper';
 import AddChildModal from './components/AddChildModal';
 import AddPartnerModal from './components/AddPartnerModal';
-import { PottyEvent, AIAdvice, User, Child } from './types';
+import ProfileModal from './components/ProfileModal';
+import AuthFlow from './components/AuthFlow';
+import { PottyEvent, AIAdvice, User, Child, EventType } from './types';
 import { getPottyAdvice } from './services/geminiService';
 import { formatTime } from './utils/stats';
 import { db } from './utils/db';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(db.getSession());
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+  
   const [children, setChildren] = useState<Child[]>([]);
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
   const [events, setEvents] = useState<PottyEvent[]>([]);
@@ -30,98 +33,109 @@ const App: React.FC = () => {
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAddPartnerModalOpen, setIsAddPartnerModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [showToast, setShowToast] = useState(false);
 
-  // Load children when user changes (using familyId for shared access)
+  // Initialize session
+  useEffect(() => {
+    db.getCurrentUser().then(savedUser => {
+      if (savedUser) setUser(savedUser);
+      setLoadingUser(false);
+    });
+  }, []);
+
+  // Load Children when User is set
   useEffect(() => {
     if (user) {
-      const familyChildren = db.getChildren(user.familyId);
-      setChildren(familyChildren);
-      if (familyChildren.length > 0 && !activeChildId) {
-        setActiveChildId(familyChildren[0].id);
-      }
-    } else {
-      setChildren([]);
-      setActiveChildId(null);
+      db.getChildren(user.familyId).then(list => {
+        setChildren(list);
+        if (list.length > 0 && !activeChildId) {
+          setActiveChildId(list[0].id);
+        }
+      });
     }
   }, [user]);
 
-  // Load events when active child changes
-  useEffect(() => {
+  // Load Events when active child changes
+  const loadEvents = useCallback(async () => {
     if (activeChildId) {
-      setEvents(db.getEvents(activeChildId));
-      setAdvice(null);
-    } else {
-      setEvents([]);
+      const list = await db.getEvents(activeChildId);
+      setEvents(list.sort((a, b) => b.timestamp - a.timestamp));
     }
   }, [activeChildId]);
 
-  // Persistence for events
   useEffect(() => {
-    if (activeChildId) {
-      db.saveEvents(activeChildId, events);
-    }
-  }, [events, activeChildId]);
+    loadEvents();
+  }, [activeChildId, loadEvents]);
 
-  const handleLogin = (u: User) => {
-    setUser(u);
-    db.setSession(u);
-  };
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await db.clearSession();
     setUser(null);
-    db.setSession(null);
+    setChildren([]);
+    setActiveChildId(null);
+    setEvents([]);
+    setToastMessage("Logged out successfully.");
+    setShowToast(true);
   };
 
-  const onAddChild = (name: string) => {
+  const onAddChild = async (name: string) => {
     if (!user) return;
-    const newChild: Child = { 
-      id: Math.random().toString(36).substr(2, 9), 
-      name,
-      familyId: user.familyId
-    };
-    db.addChild(user.familyId, newChild);
+    const newChild = await db.addChild(user.familyId, name);
     setChildren(prev => [...prev, newChild]);
-    setActiveChildId(newChild.id);
+    if (!activeChildId) setActiveChildId(newChild.id);
     setToastMessage(`${name} added!`);
     setShowToast(true);
   };
 
-  const onInvitePartner = (email: string, name: string): string => {
+  const onInvitePartner = async (email: string, name: string): Promise<string> => {
     if (!user) return "";
-    const token = db.createToken(email, user.familyId);
+    const token = await db.createToken(email, user.familyId);
     setToastMessage(`Invitation token generated for ${name}`);
     setShowToast(true);
     return token;
   };
 
-  const handleLogEvent = useCallback(() => {
+  const handleLogEvent = useCallback(async (type: EventType) => {
     if (!activeChildId) {
       setIsAddModalOpen(true);
       return;
     }
     const now = Date.now();
-    const newEvent: PottyEvent = {
-      id: Math.random().toString(36).substr(2, 9),
+    await db.saveEvent({
       childId: activeChildId,
-      timestamp: now
-    };
-    setEvents(prev => [...prev, newEvent]);
+      timestamp: now,
+      type
+    });
+    
+    await loadEvents();
     
     const d = new Date(now);
     const timeStr = formatTime(d.getHours() * 60 + d.getMinutes());
-    setToastMessage(`Logged for ${children.find(c => c.id === activeChildId)?.name} at ${timeStr}`);
+    
+    let label = "Event";
+    if (type === 'wakeup') label = "Wakeup";
+    else if (type === 'potty') label = "Potty Event";
+    else if (type === 'nap') label = "Nap";
+    else if (type === 'breakfast') label = "Breakfast";
+    else if (type === 'lunch') label = "Lunch";
+    else if (type === 'dinner') label = "Dinner";
+    else if (type === 'snack') label = "Snack";
+    else if (type === 'meal') label = "Meal";
+
+    setToastMessage(`${label} logged at ${timeStr}`);
     setShowToast(true);
-  }, [activeChildId, children]);
+  }, [activeChildId, loadEvents]);
 
-  const handleDeleteEvent = useCallback((id: string) => {
-    setEvents(prev => prev.filter(e => e.id !== id));
-  }, []);
+  const handleDeleteEvent = useCallback(async (id: string) => {
+    await db.deleteEvent(id);
+    await loadEvents();
+  }, [loadEvents]);
 
-  const handleEditEvent = useCallback((id: string, newTimestamp: number) => {
-    setEvents(prev => prev.map(e => e.id === id ? { ...e, timestamp: newTimestamp } : e));
-  }, []);
+  const handleEditEvent = useCallback(async (id: string, newTimestamp: number) => {
+    await db.updateEvent(id, newTimestamp);
+    await loadEvents();
+  }, [loadEvents]);
 
   const fetchAdvice = useCallback(async () => {
     if (events.length >= 3) {
@@ -138,8 +152,16 @@ const App: React.FC = () => {
     }
   }, [events.length, fetchAdvice]);
 
+  if (loadingUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   if (!user) {
-    return <Auth onLogin={handleLogin} />;
+    return <AuthFlow onLogin={setUser} />;
   }
 
   return (
@@ -149,6 +171,7 @@ const App: React.FC = () => {
         onLogout={handleLogout} 
         onAddChild={() => setIsAddModalOpen(true)} 
         onAddPartner={() => setIsAddPartnerModalOpen(true)}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
       />
       
       <AddChildModal 
@@ -163,6 +186,13 @@ const App: React.FC = () => {
         onInvite={onInvitePartner}
       />
 
+      <ProfileModal 
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        user={user}
+        childrenCount={children.length}
+      />
+
       <Toast 
         message={toastMessage} 
         isVisible={showToast} 
@@ -170,6 +200,12 @@ const App: React.FC = () => {
       />
 
       <main className="max-w-4xl mx-auto px-4 safe-area-inset-bottom">
+        <div className="flex items-center justify-between mb-2 px-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Active Child</span>
+          </div>
+        </div>
+        
         <ChildSwiper 
           children={children} 
           activeChildId={activeChildId} 
@@ -181,8 +217,8 @@ const App: React.FC = () => {
             <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
               <span className="text-4xl">👋</span>
             </div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">No children added yet</h2>
-            <p className="text-slate-500 mb-8 max-w-xs mx-auto">Add your first child to start tracking their potty habits and get AI insights.</p>
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Welcome, {user.firstName}!</h2>
+            <p className="text-slate-500 mb-8 max-w-xs mx-auto">Add your child to start tracking their potty habits and get AI insights.</p>
             <button 
               onClick={() => setIsAddModalOpen(true)}
               className="bg-blue-500 text-white px-10 py-4 rounded-2xl font-bold shadow-xl shadow-blue-100 hover:bg-blue-600 transition-all active:scale-95"

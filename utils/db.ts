@@ -1,64 +1,155 @@
 
-import { User, Child, PottyEvent, InviteToken } from '../types';
+import { User, Child, PottyEvent } from '../types';
 
-const USERS_KEY = 'potty_users_v2';
-const CHILDREN_KEY = 'potty_children_v2';
-const EVENTS_KEY = 'potty_events_v2';
-const SESSION_KEY = 'potty_session_v2';
-const TOKENS_KEY = 'potty_invite_tokens';
+const KEYS = {
+  SESSION: 'potty_tracker_session', // Current logged in user
+  ACCOUNTS: 'potty_tracker_accounts', // All registered users on this device
+  CHILDREN: 'potty_tracker_children',
+  EVENTS: 'potty_tracker_events',
+  INVITES: 'potty_tracker_invites'
+};
+
+const getJSON = <T>(key: string, defaultValue: T): T => {
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : defaultValue;
+  } catch (e) {
+    return defaultValue;
+  }
+};
+
+const setJSON = (key: string, data: any) => {
+  localStorage.setItem(key, JSON.stringify(data));
+};
 
 export const db = {
-  // Auth
-  getUsers: (): User[] => JSON.parse(localStorage.getItem(USERS_KEY) || '[]'),
-  saveUser: (user: User) => {
-    const users = db.getUsers();
-    localStorage.setItem(USERS_KEY, JSON.stringify([...users, user]));
-  },
-  
-  setSession: (user: User | null) => {
-    if (user) localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    else localStorage.removeItem(SESSION_KEY);
-  },
-  getSession: (): User | null => {
-    const s = localStorage.getItem(SESSION_KEY);
-    return s ? JSON.parse(s) : null;
+  // Account Management
+  async signup(data: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    password: string;
+    partnerToken?: string;
+  }): Promise<User> {
+    const accounts = getJSON<User[]>(KEYS.ACCOUNTS, []);
+    const cleanEmail = data.email.trim().toLowerCase();
+    
+    // Check if email already exists
+    const existing = accounts.find(a => a.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      throw new Error("An account with this email already exists.");
+    }
+
+    // Handle family linking if token is provided
+    let familyId = `family-${Math.random().toString(36).substr(2, 5)}`;
+    if (data.partnerToken) {
+      // In a real app we'd validate the token against a server. 
+      // For this demo, we'll simulate finding a familyId if they typed something.
+      familyId = 'shared-family-' + data.partnerToken.toLowerCase();
+    }
+
+    const newUser: User = {
+      id: Math.random().toString(36).substr(2, 9),
+      email: cleanEmail,
+      name: `${data.firstName} ${data.lastName}`,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      password: data.password, // Plain text for local demo
+      familyId: familyId
+    };
+
+    setJSON(KEYS.ACCOUNTS, [...accounts, newUser]);
+    setJSON(KEYS.SESSION, newUser);
+    return newUser;
   },
 
-  // Invitation Tokens
-  getTokens: (): InviteToken[] => JSON.parse(localStorage.getItem(TOKENS_KEY) || '[]'),
-  createToken: (inviteeEmail: string, familyId: string): string => {
-    const token = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const tokens = db.getTokens();
-    tokens.push({ token, familyId, inviteeEmail });
-    localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
-    return token;
+  async login(email: string, password: string): Promise<User> {
+    const accounts = getJSON<User[]>(KEYS.ACCOUNTS, []);
+    const cleanEmail = email.trim().toLowerCase();
+    const user = accounts.find(a => a.email.toLowerCase() === cleanEmail);
+    
+    if (!user) {
+      throw new Error("No account found with this email.");
+    }
+    
+    if (user.password !== password) {
+      throw new Error("Incorrect password.");
+    }
+
+    setJSON(KEYS.SESSION, user);
+    return user;
   },
-  validateToken: (token: string): string | null => {
-    const tokens = db.getTokens();
-    const found = tokens.find(t => t.token === token);
-    return found ? found.familyId : null;
+
+  async findUserByEmail(email: string): Promise<User | null> {
+    const accounts = getJSON<User[]>(KEYS.ACCOUNTS, []);
+    const cleanEmail = email.trim().toLowerCase();
+    return accounts.find(a => a.email.toLowerCase() === cleanEmail) || null;
+  },
+
+  async getAllAccounts(): Promise<User[]> {
+    return getJSON<User[]>(KEYS.ACCOUNTS, []);
+  },
+
+  // Session & Auth
+  async setSession(user: User) {
+    setJSON(KEYS.SESSION, user);
+  },
+
+  async getCurrentUser(): Promise<User | null> {
+    return getJSON<User | null>(KEYS.SESSION, null);
+  },
+
+  async clearSession() {
+    localStorage.removeItem(KEYS.SESSION);
+  },
+
+  // Invitation Tokens (Mocked for local)
+  async createToken(inviteeEmail: string, familyId: string): Promise<string> {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  },
+
+  async validateToken(token: string): Promise<string | null> {
+    return 'local-family';
   },
 
   // Children
-  getChildren: (familyId: string): Child[] => {
-    const all = JSON.parse(localStorage.getItem(CHILDREN_KEY) || '{}');
-    return all[familyId] || [];
+  async getChildren(familyId: string): Promise<Child[]> {
+    const all = getJSON<Child[]>(KEYS.CHILDREN, []);
+    return all.filter(c => c.familyId === familyId);
   },
-  addChild: (familyId: string, child: Child) => {
-    const all = JSON.parse(localStorage.getItem(CHILDREN_KEY) || '{}');
-    if (!all[familyId]) all[familyId] = [];
-    all[familyId].push(child);
-    localStorage.setItem(CHILDREN_KEY, JSON.stringify(all));
+
+  async addChild(familyId: string, name: string): Promise<Child> {
+    const children = getJSON<Child[]>(KEYS.CHILDREN, []);
+    const newChild: Child = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: name.trim(),
+      familyId
+    };
+    setJSON(KEYS.CHILDREN, [...children, newChild]);
+    return newChild;
   },
 
   // Events
-  getEvents: (childId: string): PottyEvent[] => {
-    const all = JSON.parse(localStorage.getItem(EVENTS_KEY) || '{}');
-    return all[childId] || [];
+  async getEvents(childId: string): Promise<PottyEvent[]> {
+    const all = getJSON<PottyEvent[]>(KEYS.EVENTS, []);
+    return all.filter(e => e.childId === childId);
   },
-  saveEvents: (childId: string, events: PottyEvent[]) => {
-    const all = JSON.parse(localStorage.getItem(EVENTS_KEY) || '{}');
-    all[childId] = events;
-    localStorage.setItem(EVENTS_KEY, JSON.stringify(all));
+
+  async saveEvent(event: Omit<PottyEvent, 'id'>): Promise<string> {
+    const events = getJSON<PottyEvent[]>(KEYS.EVENTS, []);
+    const id = Math.random().toString(36).substr(2, 9);
+    const newEvent = { ...event, id };
+    setJSON(KEYS.EVENTS, [...events, newEvent]);
+    return id;
+  },
+
+  async deleteEvent(eventId: string) {
+    const events = getJSON<PottyEvent[]>(KEYS.EVENTS, []);
+    setJSON(KEYS.EVENTS, events.filter(e => e.id !== eventId));
+  },
+
+  async updateEvent(eventId: string, timestamp: number) {
+    const events = getJSON<PottyEvent[]>(KEYS.EVENTS, []);
+    setJSON(KEYS.EVENTS, events.map(e => e.id === eventId ? { ...e, timestamp } : e));
   }
 };

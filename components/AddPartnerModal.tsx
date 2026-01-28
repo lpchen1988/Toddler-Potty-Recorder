@@ -1,24 +1,34 @@
 
 import React, { useState } from 'react';
 
+// Added async return type to onInvite to support the database operations in App.tsx
 interface AddPartnerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onInvite: (email: string, name: string) => string;
+  onInvite: (email: string, name: string) => Promise<string>;
 }
 
 const AddPartnerModal: React.FC<AddPartnerModalProps> = ({ isOpen, onClose, onInvite }) => {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Updated handleSubmit to be async to handle the awaited token generation
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (email && name) {
-      const token = onInvite(email, name);
-      setGeneratedToken(token);
+      setLoading(true);
+      try {
+        const token = await onInvite(email, name);
+        setGeneratedToken(token);
+      } catch (error) {
+        console.error("Invite error:", error);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -26,6 +36,7 @@ const AddPartnerModal: React.FC<AddPartnerModalProps> = ({ isOpen, onClose, onIn
     setGeneratedToken(null);
     setEmail('');
     setName('');
+    setLoading(false);
     onClose();
   };
 
@@ -93,9 +104,10 @@ const AddPartnerModal: React.FC<AddPartnerModalProps> = ({ isOpen, onClose, onIn
               </button>
               <button
                 type="submit"
-                className="flex-1 px-4 py-3 bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-600 transition-colors"
+                disabled={loading}
+                className="flex-1 px-4 py-3 bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-600 transition-colors disabled:opacity-50"
               >
-                Send Invite
+                {loading ? 'Sending...' : 'Send Invite'}
               </button>
             </div>
           </form>

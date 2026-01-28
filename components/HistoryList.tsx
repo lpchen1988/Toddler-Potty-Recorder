@@ -1,12 +1,40 @@
 
 import React, { useMemo } from 'react';
-import { PottyEvent } from '../types';
+import { PottyEvent, EventType } from '../types';
 import { formatTime } from '../utils/stats';
 
 interface HistoryListProps {
   events: PottyEvent[];
   onDelete: (id: string) => void;
 }
+
+const getEventIcon = (type: EventType | undefined) => {
+  switch (type) {
+    case 'wakeup': return '☀️';
+    case 'meal': return '🍎';
+    case 'breakfast': return '🍳';
+    case 'lunch': return '🥪';
+    case 'dinner': return '🍝';
+    case 'snack': return '🍌';
+    case 'nap': return '😴';
+    case 'potty':
+    default: return '💩';
+  }
+};
+
+const getEventLabel = (type: EventType | undefined) => {
+  switch (type) {
+    case 'wakeup': return 'Good Morning';
+    case 'meal': return 'Meal Time';
+    case 'breakfast': return 'Breakfast';
+    case 'lunch': return 'Lunch';
+    case 'dinner': return 'Dinner';
+    case 'snack': return 'Snack';
+    case 'nap': return 'Nap Time';
+    case 'potty':
+    default: return 'Number 2';
+  }
+};
 
 const HistoryList: React.FC<HistoryListProps> = ({ events, onDelete }) => {
   const groupedEvents = useMemo(() => {
@@ -32,7 +60,8 @@ const HistoryList: React.FC<HistoryListProps> = ({ events, onDelete }) => {
   return (
     <div className="space-y-6 mb-12">
       <h3 className="text-lg font-bold text-slate-800 px-2">History Log</h3>
-      {Object.entries(groupedEvents).map(([date, dayEvents]) => (
+      {/* Explicitly cast Object.entries to resolve the 'unknown' type inference on dayEvents for map calls */}
+      {(Object.entries(groupedEvents) as [string, PottyEvent[]][]).map(([date, dayEvents]) => (
         <div key={date} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="bg-slate-50 px-4 py-2 border-b border-slate-100">
             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">{date}</h4>
@@ -41,9 +70,9 @@ const HistoryList: React.FC<HistoryListProps> = ({ events, onDelete }) => {
             {dayEvents.map(event => (
               <div key={event.id} className="flex items-center justify-between px-4 py-3 group">
                 <div className="flex items-center gap-3">
-                  <span className="text-xl">💩</span>
+                  <span className="text-xl">{getEventIcon(event.type)}</span>
                   <div className="flex flex-col">
-                    <span className="text-slate-700 font-medium">Number 2</span>
+                    <span className="text-slate-700 font-medium">{getEventLabel(event.type)}</span>
                     <span className="text-slate-400 font-mono text-xs">
                       {formatTime(new Date(event.timestamp).getHours() * 60 + new Date(event.timestamp).getMinutes())}
                     </span>
