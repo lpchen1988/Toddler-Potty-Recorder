@@ -6,7 +6,6 @@ import ChartContainer from './components/ChartContainer';
 import Insights from './components/Insights';
 import HistoryList from './components/HistoryList';
 import BottomNav from './components/BottomNav';
-import TodayLogs from './components/TodayLogs';
 import Toast from './components/Toast';
 import ChildSwiper from './components/ChildSwiper';
 import AddChildModal from './components/AddChildModal';
@@ -61,6 +60,7 @@ const App: React.FC = () => {
   const loadEvents = useCallback(async () => {
     if (activeChildId) {
       const list = await db.getEvents(activeChildId);
+      // Sort: Newest at top
       setEvents(list.sort((a, b) => b.timestamp - a.timestamp));
     }
   }, [activeChildId]);
@@ -83,6 +83,7 @@ const App: React.FC = () => {
     if (!user) return;
     const newChild = await db.addChild(user.familyId, name);
     setChildren(prev => [...prev, newChild]);
+    // Only switch to new child if none selected
     if (!activeChildId) setActiveChildId(newChild.id);
     setToastMessage(`${name} added!`);
     setShowToast(true);
@@ -112,29 +113,22 @@ const App: React.FC = () => {
     
     const d = new Date(now);
     const timeStr = formatTime(d.getHours() * 60 + d.getMinutes());
-    
-    let label = "Event";
-    if (type === 'wakeup') label = "Wakeup";
-    else if (type === 'potty') label = "Potty Event";
-    else if (type === 'nap') label = "Nap";
-    else if (type === 'breakfast') label = "Breakfast";
-    else if (type === 'lunch') label = "Lunch";
-    else if (type === 'dinner') label = "Dinner";
-    else if (type === 'snack') label = "Snack";
-    else if (type === 'meal') label = "Meal";
-
-    setToastMessage(`${label} logged at ${timeStr}`);
+    setToastMessage(`Potty Event logged at ${timeStr}`);
     setShowToast(true);
   }, [activeChildId, loadEvents]);
 
   const handleDeleteEvent = useCallback(async (id: string) => {
     await db.deleteEvent(id);
     await loadEvents();
+    setToastMessage("Entry deleted");
+    setShowToast(true);
   }, [loadEvents]);
 
   const handleEditEvent = useCallback(async (id: string, newTimestamp: number) => {
     await db.updateEvent(id, newTimestamp);
     await loadEvents();
+    setToastMessage("Entry updated");
+    setShowToast(true);
   }, [loadEvents]);
 
   const fetchAdvice = useCallback(async () => {
@@ -147,6 +141,7 @@ const App: React.FC = () => {
   }, [events]);
 
   useEffect(() => {
+    // Refresh advice periodically if enough data exists
     if (events.length >= 5 && events.length % 3 === 0) {
       fetchAdvice();
     }
@@ -227,13 +222,15 @@ const App: React.FC = () => {
             </button>
           </div>
         ) : activeTab === 'log' ? (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <TrackerButton onLog={handleLogEvent} />
-            <TodayLogs 
-              events={events} 
-              onDelete={handleDeleteEvent} 
-              onEdit={handleEditEvent} 
-            />
+            <div className="border-t border-slate-100 pt-8">
+              <HistoryList 
+                events={events} 
+                onDelete={handleDeleteEvent} 
+                onEdit={handleEditEvent}
+              />
+            </div>
           </div>
         ) : (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-8">
@@ -245,14 +242,31 @@ const App: React.FC = () => {
 
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-slate-800">Zoom Timeline</h3>
-                <span className="text-xs text-slate-400 font-mono">{chartWidthMultiplier.toFixed(1)}x</span>
+                <div className="flex flex-col">
+                  <h3 className="font-bold text-slate-800 text-sm">Timeline Zoom</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Stretch to see minute-by-minute detail</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setChartWidthMultiplier(prev => Math.max(1, prev - 0.5))}
+                    className="w-8 h-8 flex items-center justify-center bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 active:scale-90 transition-all font-black"
+                  >
+                    -
+                  </button>
+                  <span className="text-xs text-blue-500 font-black w-8 text-center">{chartWidthMultiplier.toFixed(1)}x</span>
+                  <button 
+                    onClick={() => setChartWidthMultiplier(prev => Math.min(5, prev + 0.5))}
+                    className="w-8 h-8 flex items-center justify-center bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 active:scale-90 transition-all font-black"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
               <input
                 type="range"
                 min="1"
                 max="5"
-                step="0.5"
+                step="0.1"
                 value={chartWidthMultiplier}
                 onChange={(e) => setChartWidthMultiplier(parseFloat(e.target.value))}
                 className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-500"
@@ -260,15 +274,14 @@ const App: React.FC = () => {
             </div>
 
             <ChartContainer events={events} chartWidthMultiplier={chartWidthMultiplier} />
-            <HistoryList events={events} onDelete={handleDeleteEvent} />
-
-            <div className="flex flex-col items-center gap-4 pb-8">
+            
+            <div className="flex flex-col items-center gap-4 py-8">
                <button 
                 onClick={fetchAdvice}
                 disabled={events.length < 3 || loadingAdvice}
-                className="text-xs bg-slate-100 text-slate-500 px-4 py-2 rounded-full font-bold uppercase tracking-wider hover:bg-slate-200 transition-colors"
+                className="text-xs bg-slate-100 text-slate-500 px-6 py-3 rounded-full font-bold uppercase tracking-wider hover:bg-slate-200 transition-colors"
               >
-                Refresh Analysis
+                Recalculate Trends
               </button>
             </div>
           </div>
